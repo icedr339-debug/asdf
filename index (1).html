@@ -1,0 +1,777 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Operation Rescue</title>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+body { background:#000; overflow:hidden; font-family:'Courier New',monospace; }
+#canvas { display:block; }
+#hud { position:fixed; top:0; left:0; width:100%; height:100%; pointer-events:none; z-index:10; }
+#crosshair { position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); width:20px; height:20px; }
+#crosshair::before,#crosshair::after { content:''; position:absolute; background:rgba(255,255,255,.85); }
+#crosshair::before { width:2px; height:100%; left:50%; transform:translateX(-50%); }
+#crosshair::after  { height:2px; width:100%; top:50%; transform:translateY(-50%); }
+#top-bar { position:absolute; top:0; left:0; right:0; padding:16px 24px; display:flex; justify-content:space-between; align-items:center; background:linear-gradient(to bottom,rgba(0,0,0,.6),transparent); }
+.mission-label { color:#ff4444; font-size:11px; letter-spacing:3px; font-weight:bold; }
+.mission-title { color:#fff; font-size:14px; letter-spacing:1px; margin-top:2px; }
+#timer { color:#ffcc00; font-size:22px; font-weight:bold; letter-spacing:2px; }
+.score-label { color:#aaa; font-size:10px; letter-spacing:2px; }
+.score-value { color:#fff; font-size:16px; font-weight:bold; }
+#user-badge { position:absolute; top:12px; right:24px; display:flex; align-items:center; gap:8px; pointer-events:auto; }
+#user-info { text-align:right; }
+#user-name  { color:#fff; font-size:12px; letter-spacing:1px; }
+#user-score { color:#ffcc00; font-size:10px; letter-spacing:1px; }
+#logout-btn { background:rgba(255,255,255,.08); border:1px solid rgba(255,255,255,.2); color:#aaa; font-family:inherit; font-size:10px; letter-spacing:2px; padding:4px 10px; cursor:pointer; border-radius:3px; }
+#logout-btn:hover { color:#fff; border-color:rgba(255,255,255,.5); }
+#bottom-bar { position:absolute; bottom:0; left:0; right:0; padding:20px 28px; display:flex; justify-content:space-between; align-items:flex-end; background:linear-gradient(to top,rgba(0,0,0,.7),transparent); }
+.stat-label { color:#aaa; font-size:10px; letter-spacing:2px; }
+.stat-value { color:#fff; font-size:28px; font-weight:bold; }
+#health-bar-wrap { width:140px; height:4px; background:rgba(255,255,255,.15); border-radius:2px; }
+#health-bar { height:100%; width:100%; background:#44ff88; border-radius:2px; transition:width .3s,background .3s; }
+#ammo-value { color:#fff; font-size:32px; font-weight:bold; }
+#ammo-reserve { color:#888; font-size:16px; }
+#weapon-name { color:#ffcc00; font-size:11px; letter-spacing:2px; margin-top:2px; }
+#hostage-panel { position:absolute; right:28px; top:80px; display:flex; flex-direction:column; gap:8px; }
+.hostage-item { display:flex; align-items:center; gap:8px; background:rgba(0,0,0,.45); padding:6px 12px; border-radius:4px; border-left:3px solid #ffcc00; }
+.hostage-icon { color:#ffcc00; font-size:14px; }
+.hostage-name { color:#fff; font-size:11px; letter-spacing:1px; }
+.hostage-status { font-size:10px; }
+.hostage-status.safe { color:#44ff88; }
+.hostage-status.captive { color:#ff8844; }
+#kill-feed { position:absolute; left:20px; top:80px; display:flex; flex-direction:column; gap:4px; }
+.kill-entry { background:rgba(0,0,0,.5); padding:4px 10px; font-size:11px; color:#fff; border-radius:3px; animation:fadeKill 3s forwards; }
+.kill-entry .killer { color:#44ff88; }
+.kill-entry .victim  { color:#ff4444; }
+@keyframes fadeKill { 0%,70%{opacity:1} 100%{opacity:0} }
+#minimap { position:absolute; bottom:100px; right:28px; width:140px; height:140px; background:rgba(0,0,0,.65); border:1px solid rgba(255,255,255,.15); border-radius:4px; overflow:hidden; }
+#hit-indicator { position:fixed; inset:0; pointer-events:none; z-index:20; border:3px solid transparent; }
+#hit-indicator.show { border-color:rgba(255,50,50,.6); animation:hitFlash .3s forwards; }
+@keyframes hitFlash { 0%{opacity:1} 100%{opacity:0;border-color:transparent;} }
+#shoot-flash { position:fixed; inset:0; pointer-events:none; z-index:20; }
+#shoot-flash.show { animation:muzzle .1s forwards; }
+@keyframes muzzle { 0%{background:rgba(255,220,100,.08)} 100%{background:rgba(255,220,100,0)} }
+
+.screen { position:fixed; inset:0; z-index:100; display:flex; flex-direction:column; align-items:center; justify-content:center; background:rgba(0,0,0,.92); }
+.screen.hidden { display:none; }
+#login-screen { background:#000; }
+.login-logo { font-size:42px; font-weight:900; letter-spacing:6px; color:#fff; margin-bottom:4px; }
+.login-logo span { color:#ff4444; }
+.login-sub { color:#555; font-size:11px; letter-spacing:4px; margin-bottom:48px; }
+.login-box { width:340px; }
+.login-tabs { display:flex; }
+.login-tab { flex:1; padding:10px; text-align:center; font-family:inherit; font-size:11px; letter-spacing:2px; cursor:pointer; border:1px solid rgba(255,255,255,.12); background:rgba(255,255,255,.04); color:#666; transition:all .2s; }
+.login-tab.active { background:rgba(255,68,68,.12); border-color:#ff4444; color:#ff4444; }
+.login-tab:first-child { border-radius:4px 0 0 0; }
+.login-tab:last-child  { border-radius:0 4px 0 0; }
+.login-form { border:1px solid rgba(255,255,255,.1); border-top:none; padding:24px; display:flex; flex-direction:column; gap:14px; border-radius:0 0 4px 4px; background:rgba(255,255,255,.03); }
+.login-input { background:rgba(255,255,255,.06); border:1px solid rgba(255,255,255,.12); color:#fff; font-family:inherit; font-size:13px; padding:10px 14px; border-radius:3px; outline:none; letter-spacing:1px; }
+.login-input:focus { border-color:#ff4444; }
+.login-input::placeholder { color:#444; }
+.btn-action { background:#ff4444; color:#fff; border:none; cursor:pointer; padding:12px; font-family:inherit; font-size:12px; letter-spacing:3px; font-weight:bold; border-radius:3px; transition:background .2s; }
+.btn-action:hover { background:#ff6666; }
+.btn-google { background:transparent; color:#ccc; border:1px solid rgba(255,255,255,.15); cursor:pointer; padding:11px; font-family:inherit; font-size:11px; letter-spacing:2px; border-radius:3px; transition:all .2s; display:flex; align-items:center; justify-content:center; gap:8px; }
+.btn-google:hover { border-color:rgba(255,255,255,.4); color:#fff; }
+.divider { display:flex; align-items:center; gap:12px; color:#333; font-size:10px; letter-spacing:2px; }
+.divider::before,.divider::after { content:''; flex:1; height:1px; background:rgba(255,255,255,.08); }
+.auth-error { color:#ff6666; font-size:11px; letter-spacing:1px; text-align:center; min-height:16px; }
+#start-screen { background:#000; }
+.game-logo { font-size:48px; font-weight:900; letter-spacing:6px; color:#fff; margin-bottom:4px; }
+.game-logo span { color:#ff4444; }
+.game-sub { color:#888; font-size:13px; letter-spacing:4px; margin-bottom:48px; }
+.btn-start { background:#ff4444; color:#fff; border:none; cursor:pointer; padding:14px 48px; font-size:14px; font-family:inherit; letter-spacing:3px; font-weight:bold; border-radius:3px; transition:background .2s; }
+.btn-start:hover { background:#ff6666; }
+.controls-hint { margin-top:36px; color:#444; font-size:11px; letter-spacing:1px; text-align:center; line-height:2; }
+.controls-hint strong { color:#888; }
+.logged-as { color:#555; font-size:11px; letter-spacing:2px; margin-top:12px; }
+.logged-as span { color:#ffcc00; }
+#pause-screen .pause-title { color:#fff; font-size:32px; letter-spacing:4px; margin-bottom:24px; }
+#pause-screen .pause-hint  { color:#888; font-size:12px; letter-spacing:2px; }
+.result-title { font-size:40px; letter-spacing:4px; margin-bottom:10px; }
+.result-sub   { color:#888; font-size:13px; letter-spacing:3px; margin-bottom:24px; }
+.result-my    { font-size:13px; color:#ccc; line-height:2.2; margin-bottom:20px; text-align:center; }
+.result-my span { color:#fff; font-weight:bold; }
+.big-score { color:#ffcc00; font-size:30px; font-weight:bold; display:block; margin-bottom:4px; }
+.lb-title { color:#ffcc00; font-size:11px; letter-spacing:4px; margin-bottom:10px; text-align:center; }
+.lb-table { width:340px; border-collapse:collapse; margin-bottom:24px; }
+.lb-table th { color:#555; font-size:10px; letter-spacing:2px; font-weight:normal; text-align:left; padding:4px 8px; border-bottom:1px solid rgba(255,255,255,.08); }
+.lb-table td { padding:6px 8px; font-size:12px; color:#ccc; border-bottom:1px solid rgba(255,255,255,.05); }
+.lb-table tr.me td { color:#ffcc00; }
+.lb-rank  { color:#555; font-size:11px; width:28px; }
+.lb-name  { max-width:150px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.lb-pts   { text-align:right; color:#fff; font-weight:bold; }
+.lb-date  { text-align:right; color:#444; font-size:10px; }
+.rank-1 .lb-rank { color:#ffd700; }
+.rank-2 .lb-rank { color:#c0c0c0; }
+.rank-3 .lb-rank { color:#cd7f32; }
+#win-screen  .result-title { color:#44ff88; }
+#lose-screen .result-title { color:#ff4444; }
+.lb-loading { color:#444; font-size:11px; letter-spacing:2px; text-align:center; margin-bottom:24px; }
+</style>
+</head>
+<body>
+<canvas id="canvas"></canvas>
+
+<div id="hud">
+  <div id="crosshair"></div>
+  <div id="top-bar">
+    <div>
+      <div class="mission-label">MISSION ACTIVE</div>
+      <div class="mission-title">Operation Rescue — Sector 7</div>
+    </div>
+    <div id="timer">02:30</div>
+    <div style="text-align:right">
+      <div class="score-label">Enemies Down</div>
+      <div class="score-value" id="kill-count">0 / 5</div>
+    </div>
+  </div>
+  <div id="user-badge" style="display:none">
+    <div id="user-info">
+      <div id="user-name"></div>
+      <div id="user-score"></div>
+    </div>
+    <button id="logout-btn">LOGOUT</button>
+  </div>
+  <div id="kill-feed"></div>
+  <div id="hostage-panel">
+    <div class="hostage-item"><span class="hostage-icon">◉</span><div><div class="hostage-name">CIVILIAN A</div><div class="hostage-status captive" id="h1-status">CAPTIVE</div></div></div>
+    <div class="hostage-item"><span class="hostage-icon">◉</span><div><div class="hostage-name">CIVILIAN B</div><div class="hostage-status captive" id="h2-status">CAPTIVE</div></div></div>
+    <div class="hostage-item"><span class="hostage-icon">◉</span><div><div class="hostage-name">CIVILIAN C</div><div class="hostage-status captive" id="h3-status">CAPTIVE</div></div></div>
+  </div>
+  <div id="minimap"><canvas id="minimap-canvas" width="140" height="140"></canvas></div>
+  <div id="bottom-bar">
+    <div>
+      <div class="stat-label">Health</div>
+      <div class="stat-value" id="health-val">100</div>
+      <div id="health-bar-wrap"><div id="health-bar"></div></div>
+    </div>
+    <div style="text-align:right">
+      <div class="stat-label">Ammo</div>
+      <div><span id="ammo-value">30</span><span id="ammo-reserve"> / 90</span></div>
+      <div id="weapon-name">M4A1 CARBINE</div>
+    </div>
+  </div>
+</div>
+
+<div id="hit-indicator"></div>
+<div id="shoot-flash"></div>
+
+<!-- LOGIN -->
+<div class="screen" id="login-screen">
+  <div class="login-logo">OPERATION <span>RESCUE</span></div>
+  <div class="login-sub">Hostage Extraction Protocol</div>
+  <div class="login-box">
+    <div class="login-tabs">
+      <button class="login-tab active" id="tab-login"    onclick="switchTab('login')">LOGIN</button>
+      <button class="login-tab"        id="tab-register" onclick="switchTab('register')">REGISTER</button>
+    </div>
+    <div class="login-form">
+      <input class="login-input" type="email"    id="auth-email" placeholder="EMAIL ADDRESS">
+      <input class="login-input" type="password" id="auth-pw"    placeholder="PASSWORD">
+      <input class="login-input" type="text"     id="auth-name"  placeholder="DISPLAY NAME (callsign)" style="display:none">
+      <div class="auth-error" id="auth-error"></div>
+      <button class="btn-action" id="auth-btn" onclick="handleAuth()">ENTER</button>
+      <div class="divider">OR</div>
+      <button class="btn-google" onclick="handleGoogle()">
+        <svg width="16" height="16" viewBox="0 0 24 24"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l3.66-2.84z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg>
+        CONTINUE WITH GOOGLE
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- START -->
+<div class="screen hidden" id="start-screen">
+  <div class="game-logo">OPERATION <span>RESCUE</span></div>
+  <div class="game-sub">Hostage Extraction Protocol</div>
+  <button class="btn-start" id="start-btn">START MISSION</button>
+  <div class="logged-as" id="logged-as-label"></div>
+  <div class="controls-hint">
+    <strong>WASD</strong> Move &nbsp;|&nbsp; <strong>Mouse</strong> Look &nbsp;|&nbsp; <strong>Click</strong> Shoot<br>
+    <strong>ESC</strong> Pause &nbsp;|&nbsp; <strong>R</strong> Reload &nbsp;|&nbsp; Walk up to hostage to <strong>Rescue</strong>
+  </div>
+</div>
+
+<!-- PAUSE -->
+<div class="screen hidden" id="pause-screen">
+  <div class="pause-title">PAUSED</div>
+  <div class="pause-hint">Press ESC to resume</div>
+</div>
+
+<!-- WIN -->
+<div class="screen hidden" id="win-screen">
+  <div class="result-title">MISSION COMPLETE</div>
+  <div class="result-sub">All hostages rescued</div>
+  <div class="result-my" id="win-my"></div>
+  <div class="lb-title">GLOBAL LEADERBOARD</div>
+  <div id="win-lb"><div class="lb-loading">Loading scores...</div></div>
+  <button class="btn-start" id="win-btn">PLAY AGAIN</button>
+</div>
+
+<!-- LOSE -->
+<div class="screen hidden" id="lose-screen">
+  <div class="result-title">MISSION FAILED</div>
+  <div class="result-sub">Time's up</div>
+  <div class="result-my" id="lose-my"></div>
+  <div class="lb-title">GLOBAL LEADERBOARD</div>
+  <div id="lose-lb"><div class="lb-loading">Loading scores...</div></div>
+  <button class="btn-start" id="lose-btn">TRY AGAIN</button>
+</div>
+
+<!-- Firebase -->
+<script type="module">
+import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
+import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword,
+         signInWithPopup, GoogleAuthProvider, signOut, onAuthStateChanged,
+         updateProfile } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js';
+import { getFirestore, doc, setDoc, getDoc, collection, query,
+         orderBy, limit, getDocs, serverTimestamp }
+  from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
+
+// ========================================
+//  YOUR FIREBASE CONFIG — paste here
+// ========================================
+const firebaseConfig = {
+  apiKey:            "YOUR_API_KEY",
+  authDomain:        "YOUR_PROJECT.firebaseapp.com",
+  projectId:         "YOUR_PROJECT_ID",
+  storageBucket:     "YOUR_PROJECT.appspot.com",
+  messagingSenderId: "YOUR_SENDER_ID",
+  appId:             "YOUR_APP_ID"
+};
+// ========================================
+
+const app  = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db   = getFirestore(app);
+let currentUser = null;
+
+// ── tab switch ──
+window.switchTab = (tab) => {
+  const isReg = tab === 'register';
+  document.getElementById('tab-login').classList.toggle('active', !isReg);
+  document.getElementById('tab-register').classList.toggle('active', isReg);
+  document.getElementById('auth-name').style.display = isReg ? '' : 'none';
+  document.getElementById('auth-btn').textContent = isReg ? 'CREATE ACCOUNT' : 'ENTER';
+  document.getElementById('auth-error').textContent = '';
+};
+
+// ── auth submit ──
+window.handleAuth = async () => {
+  const email = document.getElementById('auth-email').value.trim();
+  const pw    = document.getElementById('auth-pw').value;
+  const name  = document.getElementById('auth-name').value.trim();
+  const isReg = document.getElementById('tab-register').classList.contains('active');
+  const errEl = document.getElementById('auth-error');
+  errEl.textContent = '';
+  try {
+    if (isReg) {
+      if (!name) { errEl.textContent = 'CALLSIGN REQUIRED'; return; }
+      const c = await createUserWithEmailAndPassword(auth, email, pw);
+      await updateProfile(c.user, { displayName: name });
+      await initUserDoc(c.user, name);
+    } else {
+      await signInWithEmailAndPassword(auth, email, pw);
+    }
+  } catch(e) { errEl.textContent = friendlyErr(e.code); }
+};
+
+// ── google ──
+window.handleGoogle = async () => {
+  try {
+    const c = await signInWithPopup(auth, new GoogleAuthProvider());
+    await initUserDoc(c.user, c.user.displayName || c.user.email.split('@')[0]);
+  } catch(e) { document.getElementById('auth-error').textContent = friendlyErr(e.code); }
+};
+
+document.getElementById('logout-btn').onclick = () => signOut(auth);
+
+function friendlyErr(code) {
+  const map = {
+    'auth/invalid-email':'INVALID EMAIL','auth/user-not-found':'USER NOT FOUND',
+    'auth/wrong-password':'WRONG PASSWORD','auth/email-already-in-use':'EMAIL ALREADY USED',
+    'auth/weak-password':'PASSWORD TOO WEAK (6+ chars)','auth/popup-closed-by-user':'POPUP CLOSED',
+    'auth/invalid-credential':'INVALID CREDENTIALS',
+  };
+  return map[code] || code;
+}
+
+// ── Firestore helpers ──
+async function initUserDoc(user, displayName) {
+  const ref = doc(db, 'users', user.uid);
+  const snap = await getDoc(ref);
+  if (!snap.exists()) {
+    await setDoc(ref, { displayName, bestScore:0, totalGames:0, createdAt:serverTimestamp() });
+  }
+}
+
+window._fbSaveScore = async (score) => {
+  if (!currentUser) return false;
+  const ref  = doc(db, 'users', currentUser.uid);
+  const snap = await getDoc(ref);
+  const data = snap.exists() ? snap.data() : {};
+  const best = data.bestScore || 0;
+  const isNew = score > best;
+  await setDoc(ref, {
+    displayName: currentUser.displayName || currentUser.email.split('@')[0],
+    bestScore:   isNew ? score : best,
+    totalGames:  (data.totalGames || 0) + 1,
+    lastScore:   score,
+    updatedAt:   serverTimestamp()
+  }, { merge:true });
+  // update badge
+  document.getElementById('user-score').textContent = 'BEST: ' + (isNew ? score : best).toLocaleString();
+  return isNew;
+};
+
+window._fbGetLeaderboard = async () => {
+  const q    = query(collection(db,'users'), orderBy('bestScore','desc'), limit(10));
+  const snap = await getDocs(q);
+  return snap.docs.map(d => ({ id:d.id, ...d.data() }));
+};
+
+window._fbRenderLeaderboard = (rows, containerId) => {
+  const myUid = currentUser ? currentUser.uid : null;
+  const el = document.getElementById(containerId);
+  if (!rows.length) { el.innerHTML = '<div class="lb-loading">No scores yet — be the first!</div>'; return; }
+  const medals = ['🥇','🥈','🥉'];
+  let html = `<table class="lb-table"><thead><tr>
+    <th></th><th>CALLSIGN</th><th style="text-align:right">BEST</th><th style="text-align:right">DATE</th>
+  </tr></thead><tbody>`;
+  rows.forEach((r,i) => {
+    const isMe = r.id === myUid;
+    const date = r.updatedAt ? new Date(r.updatedAt.seconds*1000).toLocaleDateString('ko-KR') : '-';
+    html += `<tr class="${isMe?'me':''} rank-${i+1}">
+      <td class="lb-rank">${medals[i] || (i+1)}</td>
+      <td class="lb-name">${r.displayName||'Unknown'}${isMe?' ◀':''}</td>
+      <td class="lb-pts">${(r.bestScore||0).toLocaleString()}</td>
+      <td class="lb-date">${date}</td>
+    </tr>`;
+  });
+  el.innerHTML = html + '</tbody></table>';
+};
+
+// ── Auth observer ──
+onAuthStateChanged(auth, async user => {
+  currentUser = user;
+  window._currentUser = user;
+  if (user) {
+    await initUserDoc(user, user.displayName || user.email.split('@')[0]);
+    const snap = await getDoc(doc(db,'users',user.uid));
+    const data = snap.exists() ? snap.data() : {};
+    const name = data.displayName || user.displayName || user.email.split('@')[0];
+    document.getElementById('user-name').textContent  = name.toUpperCase();
+    document.getElementById('user-score').textContent = 'BEST: ' + (data.bestScore||0).toLocaleString();
+    document.getElementById('user-badge').style.display = 'flex';
+    document.getElementById('logged-as-label').innerHTML = `Logged in as <span>${name.toUpperCase()}</span>`;
+    showScreen('start-screen');
+  } else {
+    document.getElementById('user-badge').style.display = 'none';
+    showScreen('login-screen');
+  }
+});
+</script>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+function calcScore(rescued,kills,timeLeft,health){
+  return (rescued*1000)+(kills*200)+Math.round(timeLeft*10)+(health*2);
+}
+const PLAYER_SPEED=6,PLAYER_HEIGHT=1.7,GRAVITY=-20;
+const ENEMY_SPEED=2.5,ENEMY_SIGHT=14,ENEMY_SHOOT_RANGE=10;
+const BULLET_SPEED=40,BULLET_LIFE=1.2,GAME_TIME=150;
+
+const renderer=new THREE.WebGLRenderer({canvas:document.getElementById('canvas'),antialias:true});
+renderer.setSize(window.innerWidth,window.innerHeight);
+renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+renderer.shadowMap.enabled=true; renderer.shadowMap.type=THREE.PCFSoftShadowMap;
+renderer.setClearColor(0x87CEEB);
+const scene=new THREE.Scene();
+scene.fog=new THREE.Fog(0x87CEEB,18,55);
+const camera=new THREE.PerspectiveCamera(75,window.innerWidth/window.innerHeight,.05,100);
+
+scene.add(new THREE.AmbientLight(0xffeedd,.6));
+const sun=new THREE.DirectionalLight(0xfff0d0,1.2);
+sun.position.set(10,20,10); sun.castShadow=true;
+sun.shadow.mapSize.set(2048,2048);
+sun.shadow.camera.left=-30; sun.shadow.camera.right=30;
+sun.shadow.camera.top=30;   sun.shadow.camera.bottom=-30; sun.shadow.camera.far=80;
+scene.add(sun);
+const fill=new THREE.DirectionalLight(0xaaddff,.3); fill.position.set(-8,5,-5); scene.add(fill);
+
+function mat(c,r=.85,m=0){return new THREE.MeshStandardMaterial({color:c,roughness:r,metalness:m});}
+const M={
+  floor:mat(0x888070),wall:mat(0xb0a090),wallDark:mat(0x7a6e62),roof:mat(0x6a5e52),
+  crate:mat(0xb87a3a),metal:mat(0x778899,.4,.7),sandbag:mat(0xd4b483),
+  enemy:mat(0x334422),enemyHead:mat(0xc8a882),
+  hostage:mat(0xffcc88),hostageClothes:mat(0xdd6644),
+  grass:mat(0x4a7a2a),concrete:mat(0x999080),
+  window:new THREE.MeshStandardMaterial({color:0x88ccff,transparent:true,opacity:.35,roughness:.1}),
+  zone:new THREE.MeshStandardMaterial({color:0x44ff88,transparent:true,opacity:.25,roughness:1}),
+};
+
+const colliders=[];
+function addBox(s,mt,x,y,z,w,h,d){
+  const m=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),mt);
+  m.position.set(x,y,z);m.castShadow=true;m.receiveShadow=true;s.add(m);
+  colliders.push({min:new THREE.Vector3(x-w/2,y-h/2,z-d/2),max:new THREE.Vector3(x+w/2,y+h/2,z+d/2)});
+  return m;
+}
+function buildMap(){
+  const gnd=new THREE.Mesh(new THREE.PlaneGeometry(80,80),M.floor);
+  gnd.rotation.x=-Math.PI/2; gnd.receiveShadow=true; scene.add(gnd);
+  const grass=new THREE.Mesh(new THREE.PlaneGeometry(200,200),M.grass);
+  grass.rotation.x=-Math.PI/2; grass.position.y=-.01; scene.add(grass);
+  const bf=new THREE.Mesh(new THREE.PlaneGeometry(20,16),M.concrete);
+  bf.rotation.x=-Math.PI/2; bf.position.set(0,.01,-8); bf.receiveShadow=true; scene.add(bf);
+  addBox(scene,M.wall,0,2,-16,20,4,.5);
+  addBox(scene,M.wall,-7,2,0,6,4,.5); addBox(scene,M.wall,7,2,0,6,4,.5);
+  addBox(scene,M.wall,0,3.25,0,2,1.5,.5);
+  addBox(scene,M.wall,10,2,-8,.5,4,16); addBox(scene,M.wall,-10,2,-8,.5,4,16);
+  addBox(scene,M.wallDark,0,2,-9,8,4,.4);
+  addBox(scene,M.wallDark,5.8,2,-9,3.5,4,.4); addBox(scene,M.wallDark,-5.8,2,-9,3.5,4,.4);
+  const roof=new THREE.Mesh(new THREE.PlaneGeometry(21,17),M.roof);
+  roof.rotation.x=Math.PI/2; roof.position.set(0,4,-8); roof.castShadow=true; scene.add(roof);
+  addBox(scene,M.wall,14,1.5,-5,8,3,.4); addBox(scene,M.wall,14,1.5,-10,8,3,.4);
+  addBox(scene,M.wall,18,1.5,-7.5,.4,3,5.4); addBox(scene,M.wall,10,1.5,-7.5,.4,3,5.4);
+  const sr=new THREE.Mesh(new THREE.PlaneGeometry(8.5,5.5),M.roof);
+  sr.rotation.x=Math.PI/2; sr.position.set(14,3.05,-7.5); scene.add(sr);
+  addBox(scene,M.wall,0,1,12,30,2,.5);
+  addBox(scene,M.wall,-15,1,0,.5,2,24); addBox(scene,M.wall,15,1,0,.5,2,24);
+  addBox(scene,M.crate,5,.5,4,1.2,1,1.2); addBox(scene,M.crate,6.2,.5,4,1.2,1,1.2);
+  addBox(scene,M.crate,5.6,1.5,4,1.2,1,1.2); addBox(scene,M.crate,-5,.5,5,1.2,1,1.2);
+  addBox(scene,M.crate,-6,1.5,5,1.2,1,1.2);
+  addBox(scene,M.sandbag,2,.35,8,3,.7,1); addBox(scene,M.sandbag,-3,.35,8,3,.7,1);
+  addBox(scene,M.metal,8,.5,8,2,1,.8); addBox(scene,M.metal,-9,.5,3,.8,1.2,.8);
+  addBox(scene,M.metal,-9,1.7,3,.8,1.2,.8);
+  [[3,2,-5],[-3,2,-5],[3,2,-13],[-3,2,-13]].forEach(([x,y,z])=>addBox(scene,M.concrete,x,y,z,.5,4,.5));
+  const ez=new THREE.Mesh(new THREE.PlaneGeometry(4,4),M.zone);
+  ez.rotation.x=-Math.PI/2; ez.position.set(-12,.02,10); scene.add(ez);
+  const pole=new THREE.Mesh(new THREE.CylinderGeometry(.06,.06,2.5,8),mat(0x44ff88));
+  pole.position.set(-12,1.25,8.5); scene.add(pole);
+  const flag=new THREE.Mesh(new THREE.PlaneGeometry(.8,.5),mat(0x44ff88));
+  flag.position.set(-11.6,2.4,8.5); scene.add(flag);
+  const wg=new THREE.PlaneGeometry(1.8,1.2);
+  [-6,6].forEach(x=>{
+    const wm=new THREE.Mesh(wg,M.window);
+    wm.position.set(10.01,2.2,x-8); wm.rotation.y=Math.PI/2; scene.add(wm);
+  });
+}
+buildMap();
+
+function makeHuman(bm,hm){
+  const g=new THREE.Group();
+  function add(geo,mat,x,y,z){const m=new THREE.Mesh(geo,mat);m.position.set(x,y,z);m.castShadow=true;g.add(m);}
+  add(new THREE.BoxGeometry(.5,.7,.3),bm,0,.95,0);
+  add(new THREE.BoxGeometry(.32,.32,.32),hm,0,1.52,0);
+  add(new THREE.BoxGeometry(.2,.7,.2),bm,-.14,.35,0);
+  add(new THREE.BoxGeometry(.2,.7,.2),bm,.14,.35,0);
+  add(new THREE.BoxGeometry(.16,.56,.16),bm,-.38,.9,0);
+  add(new THREE.BoxGeometry(.16,.56,.16),bm,.38,.9,0);
+  return g;
+}
+
+const EPOS=[[4,0,-6],[-4,0,-6],[13,0,-5],[13,0,-10],[0,0,-13]];
+const EROUTES=[[[4,-6],[4,-4],[6,-4],[6,-6]],[[-4,-6],[-4,-4],[-6,-4],[-6,-6]],
+  [[13,-5],[13,-8],[11,-8],[11,-5]],[[13,-10],[13,-12],[11,-12],[11,-10]],[[0,-13],[2,-13],[2,-11],[0,-11]]];
+const enemies=EPOS.map((p,i)=>{
+  const mesh=makeHuman(M.enemy,M.enemyHead);
+  mesh.position.set(...p); scene.add(mesh);
+  return{mesh,health:100,alive:true,state:'patrol',
+    patrolRoute:EROUTES[i].map(([x,z])=>new THREE.Vector3(x,0,z)),patrolIdx:0,shootCooldown:0};
+});
+
+const HPOS=[[4,0,-12],[-4,0,-12],[0,0,-6]];
+const hostages=HPOS.map((p,i)=>{
+  const mesh=makeHuman(M.hostage,M.hostageClothes);
+  mesh.position.set(...p); scene.add(mesh);
+  return{mesh,rescued:false,id:i+1};
+});
+
+const player={
+  pos:new THREE.Vector3(0,PLAYER_HEIGHT,8),vel:new THREE.Vector3(),
+  yaw:0,pitch:0,health:100,ammo:30,reserve:90,kills:0,reloading:false,
+};
+camera.position.copy(player.pos);
+
+const bullets=[];
+function spawnBullet(origin,dir,isEnemy){
+  const m=new THREE.Mesh(new THREE.SphereGeometry(.05,4,4),
+    new THREE.MeshStandardMaterial({color:isEnemy?0xff4444:0xffee44,emissive:isEnemy?0xff0000:0xffdd00,emissiveIntensity:1}));
+  m.position.copy(origin); scene.add(m);
+  bullets.push({mesh:m,vel:dir.clone().multiplyScalar(BULLET_SPEED),life:BULLET_LIFE,isEnemy});
+}
+
+const keys={};
+document.addEventListener('keydown',e=>keys[e.code]=true);
+document.addEventListener('keyup',  e=>keys[e.code]=false);
+let pointerLocked=false;
+document.addEventListener('mousemove',e=>{
+  if(!pointerLocked||gameState!=='playing')return;
+  player.yaw-=e.movementX*.002; player.pitch-=e.movementY*.002;
+  player.pitch=Math.max(-1.2,Math.min(1.2,player.pitch));
+});
+document.addEventListener('click',()=>{if(gameState==='playing')shootPlayer();});
+document.addEventListener('keydown',e=>{
+  if(e.code==='KeyR'&&gameState==='playing')startReload();
+  if(e.code==='Escape'){
+    if(gameState==='playing')pauseGame();
+    else if(gameState==='paused')resumeGame();
+  }
+});
+document.addEventListener('pointerlockchange',()=>pointerLocked=!!document.pointerLockElement);
+
+let gameState='menu',timeLeft=GAME_TIME,lastTime=0;
+
+function showScreen(id){
+  ['login-screen','start-screen','pause-screen','win-screen','lose-screen']
+    .forEach(s=>document.getElementById(s).classList.add('hidden'));
+  if(id)document.getElementById(id).classList.remove('hidden');
+}
+window.showScreen=showScreen;
+
+function startGame(){
+  player.pos.set(0,PLAYER_HEIGHT,8); player.vel.set(0,0,0);
+  player.yaw=Math.PI; player.pitch=0;
+  player.health=100; player.ammo=30; player.reserve=90; player.kills=0; player.reloading=false;
+  timeLeft=GAME_TIME;
+  enemies.forEach((e,i)=>{
+    e.alive=true;e.health=100;e.state='patrol';e.patrolIdx=0;e.shootCooldown=0;
+    e.mesh.visible=true; e.mesh.position.set(...EPOS[i]);
+  });
+  hostages.forEach((h,i)=>{h.rescued=false;h.mesh.visible=true;h.mesh.position.set(...HPOS[i]);});
+  updateHUD(); showScreen(null);
+  document.getElementById('hud').style.opacity='1';
+  document.body.requestPointerLock();
+  gameState='playing';
+}
+function pauseGame(){gameState='paused';document.exitPointerLock();showScreen('pause-screen');}
+function resumeGame(){gameState='playing';document.body.requestPointerLock();showScreen(null);}
+
+async function endGame(win){
+  gameState=win?'win':'lose';
+  document.exitPointerLock();
+  const rescued=hostages.filter(h=>h.rescued).length;
+  const score=calcScore(rescued,player.kills,win?timeLeft:0,player.health);
+  let isNewBest=false;
+  if(window._fbSaveScore) isNewBest=await window._fbSaveScore(score).catch(()=>false);
+  const myHtml=`
+    <span class="big-score">${score.toLocaleString()} pts${isNewBest?' 🏆 NEW BEST!':''}</span>
+    Enemies: <span>${player.kills}</span> &nbsp;|&nbsp;
+    Hostages: <span>${rescued}/3</span> &nbsp;|&nbsp;
+    Time left: <span>${formatTime(Math.max(0,timeLeft))}</span>`;
+  document.getElementById(win?'win-my':'lose-my').innerHTML=myHtml;
+  showScreen(win?'win-screen':'lose-screen');
+  const lbId=win?'win-lb':'lose-lb';
+  if(window._fbGetLeaderboard){
+    try{
+      const rows=await window._fbGetLeaderboard();
+      window._fbRenderLeaderboard(rows,lbId);
+    }catch(e){document.getElementById(lbId).innerHTML='<div class="lb-loading">Could not load scores</div>';}
+  }else{
+    document.getElementById(lbId).innerHTML='<div class="lb-loading">Firebase not configured</div>';
+  }
+}
+
+document.getElementById('start-btn').onclick=startGame;
+document.getElementById('win-btn').onclick=startGame;
+document.getElementById('lose-btn').onclick=startGame;
+
+function shootPlayer(){
+  if(player.ammo<=0||player.reloading)return;
+  player.ammo--; updateAmmo();
+  const dir=new THREE.Vector3(0,0,-1).applyEuler(new THREE.Euler(player.pitch,player.yaw,0,'YXZ'));
+  spawnBullet(camera.position.clone().add(dir.clone().multiplyScalar(.5)),dir,false);
+  const sf=document.getElementById('shoot-flash');
+  sf.classList.remove('show'); void sf.offsetWidth; sf.classList.add('show');
+  if(player.ammo===0&&player.reserve>0)setTimeout(startReload,300);
+}
+function startReload(){
+  if(player.reloading||player.reserve<=0||player.ammo===30)return;
+  player.reloading=true;
+  setTimeout(()=>{
+    const need=30-player.ammo,get=Math.min(need,player.reserve);
+    player.ammo+=get;player.reserve-=get;player.reloading=false;updateAmmo();
+  },1800);
+}
+function enemyShoot(e){
+  const dir=new THREE.Vector3().subVectors(camera.position,e.mesh.position).normalize();
+  dir.x+=(Math.random()-.5)*.15; dir.y+=(Math.random()-.5)*.08;
+  spawnBullet(e.mesh.position.clone().add(new THREE.Vector3(0,1.4,0)),dir,true);
+}
+function collidesWithMap(pos,r=.35){
+  const mn=new THREE.Vector3(pos.x-r,pos.y-PLAYER_HEIGHT,pos.z-r);
+  const mx=new THREE.Vector3(pos.x+r,pos.y+.5,pos.z+r);
+  for(const c of colliders){
+    if(mn.x<c.max.x&&mx.x>c.min.x&&mn.y<c.max.y&&mx.y>c.min.y&&mn.z<c.max.z&&mx.z>c.min.z)return true;
+  }
+  return false;
+}
+function updateHUD(){updateHealth();updateAmmo();updateKills();}
+function updateHealth(){
+  const h=Math.max(0,player.health);
+  document.getElementById('health-val').textContent=h;
+  document.getElementById('health-bar').style.width=h+'%';
+  document.getElementById('health-bar').style.background=h>50?'#44ff88':h>25?'#ffcc00':'#ff4444';
+}
+function updateAmmo(){
+  document.getElementById('ammo-value').textContent=player.ammo;
+  document.getElementById('ammo-reserve').textContent=' / '+player.reserve;
+}
+function updateKills(){document.getElementById('kill-count').textContent=player.kills+' / '+enemies.length;}
+function formatTime(s){const m=Math.floor(s/60),sec=Math.floor(s%60);return String(m).padStart(2,'0')+':'+String(sec).padStart(2,'0');}
+function addKillFeed(name){
+  const el=document.createElement('div');el.className='kill-entry';
+  el.innerHTML=`<span class="killer">YOU</span> ▸ <span class="victim">${name}</span>`;
+  document.getElementById('kill-feed').appendChild(el);
+  setTimeout(()=>el.remove(),3100);
+}
+function updateHostageUI(id,rescued){
+  const el=document.getElementById(`h${id}-status`);
+  el.textContent=rescued?'RESCUED':'CAPTIVE';
+  el.className='hostage-status '+(rescued?'safe':'captive');
+}
+function showHit(){
+  const el=document.getElementById('hit-indicator');
+  el.classList.remove('show');void el.offsetWidth;el.classList.add('show');
+}
+
+const mmCtx=document.getElementById('minimap-canvas').getContext('2d');
+function drawMinimap(){
+  const S=140,sc=S/40,ox=S/2,oy=S/2;
+  mmCtx.clearRect(0,0,S,S);
+  mmCtx.fillStyle='rgba(0,0,0,.5)';mmCtx.fillRect(0,0,S,S);
+  mmCtx.strokeStyle='rgba(200,180,150,.7)';mmCtx.lineWidth=2;
+  mmCtx.strokeRect(ox+(-10)*sc,oy+(-16)*sc,20*sc,16*sc);
+  mmCtx.strokeRect(ox+(10)*sc,oy+(-10)*sc,8*sc,5*sc);
+  mmCtx.strokeRect(ox+(-15)*sc,oy+(-12)*sc,30*sc,24*sc);
+  mmCtx.fillStyle='rgba(68,255,136,.3)';mmCtx.fillRect(ox+(-14)*sc,oy+(8)*sc,4*sc,4*sc);
+  enemies.forEach(e=>{
+    if(!e.alive)return;
+    mmCtx.fillStyle=e.state==='patrol'?'rgba(255,80,80,.9)':'rgba(255,0,0,1)';
+    mmCtx.beginPath();mmCtx.arc(ox+e.mesh.position.x*sc,oy+e.mesh.position.z*sc,3,0,Math.PI*2);mmCtx.fill();
+  });
+  hostages.forEach(h=>{
+    if(h.rescued)return;
+    mmCtx.fillStyle='rgba(255,200,50,.9)';
+    mmCtx.beginPath();mmCtx.arc(ox+h.mesh.position.x*sc,oy+h.mesh.position.z*sc,3,0,Math.PI*2);mmCtx.fill();
+  });
+  mmCtx.fillStyle='#44aaff';
+  mmCtx.save();mmCtx.translate(ox+player.pos.x*sc,oy+player.pos.z*sc);mmCtx.rotate(player.yaw+Math.PI);
+  mmCtx.beginPath();mmCtx.moveTo(0,-5);mmCtx.lineTo(-3,3);mmCtx.lineTo(3,3);mmCtx.closePath();
+  mmCtx.fill();mmCtx.restore();
+}
+
+function updateEnemies(dt){
+  enemies.forEach(e=>{
+    if(!e.alive)return;
+    e.shootCooldown-=dt;
+    const dist=e.mesh.position.distanceTo(player.pos);
+    if(e.state==='patrol'){
+      const t=e.patrolRoute[e.patrolIdx];
+      const d=new THREE.Vector3().subVectors(t,e.mesh.position);d.y=0;
+      if(d.length()<.5){e.patrolIdx=(e.patrolIdx+1)%e.patrolRoute.length;}
+      else{d.normalize();e.mesh.position.addScaledVector(d,ENEMY_SPEED*dt);e.mesh.rotation.y=Math.atan2(d.x,d.z);}
+      if(dist<ENEMY_SIGHT)e.state='chase';
+    }else if(e.state==='chase'){
+      if(dist>ENEMY_SIGHT*1.5){e.state='patrol';return;}
+      if(dist<=ENEMY_SHOOT_RANGE){e.state='shoot';return;}
+      const d=new THREE.Vector3().subVectors(player.pos,e.mesh.position);d.y=0;d.normalize();
+      e.mesh.position.addScaledVector(d,ENEMY_SPEED*1.4*dt);e.mesh.rotation.y=Math.atan2(d.x,d.z);
+    }else if(e.state==='shoot'){
+      if(dist>ENEMY_SHOOT_RANGE*1.2){e.state='chase';return;}
+      const d=new THREE.Vector3().subVectors(player.pos,e.mesh.position);
+      e.mesh.rotation.y=Math.atan2(d.x,d.z);
+      if(e.shootCooldown<=0){e.shootCooldown=1.2+Math.random()*.8;enemyShoot(e);}
+    }
+  });
+}
+
+function updateBullets(dt){
+  for(let i=bullets.length-1;i>=0;i--){
+    const b=bullets[i];
+    b.mesh.position.addScaledVector(b.vel,dt);b.life-=dt;
+    if(b.life<=0){scene.remove(b.mesh);bullets.splice(i,1);continue;}
+    if(b.isEnemy){
+      if(b.mesh.position.distanceTo(player.pos)<.5){
+        player.health-=12+Math.round(Math.random()*8);updateHealth();showHit();
+        scene.remove(b.mesh);bullets.splice(i,1);
+        if(player.health<=0){endGame(false);return;}continue;
+      }
+    }else{
+      let hit=false;
+      enemies.forEach(e=>{
+        if(!e.alive||hit)return;
+        if(b.mesh.position.distanceTo(e.mesh.position)<.7){
+          e.health-=35+Math.round(Math.random()*20);e.state='shoot';
+          if(e.health<=0){e.alive=false;e.mesh.visible=false;player.kills++;updateKills();addKillFeed('ENEMY '+(enemies.indexOf(e)+1));}
+          hit=true;
+        }
+      });
+      if(hit){scene.remove(b.mesh);bullets.splice(i,1);continue;}
+    }
+    if(collidesWithMap(b.mesh.position,.05)){scene.remove(b.mesh);bullets.splice(i,1);}
+  }
+}
+
+const _mv=new THREE.Vector3();
+function updatePlayer(dt){
+  _mv.set(0,0,0);
+  if(keys['KeyW']||keys['ArrowUp'])_mv.z-=1;
+  if(keys['KeyS']||keys['ArrowDown'])_mv.z+=1;
+  if(keys['KeyA']||keys['ArrowLeft'])_mv.x-=1;
+  if(keys['KeyD']||keys['ArrowRight'])_mv.x+=1;
+  _mv.normalize().multiplyScalar(PLAYER_SPEED*dt);
+  _mv.applyQuaternion(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0,1,0),player.yaw));
+  player.vel.y+=GRAVITY*dt;
+  if(player.pos.y<=PLAYER_HEIGHT){player.vel.y=0;player.pos.y=PLAYER_HEIGHT;}
+  const nx=player.pos.clone();nx.x+=_mv.x;if(!collidesWithMap(nx))player.pos.x=nx.x;
+  const nz=player.pos.clone();nz.z+=_mv.z;if(!collidesWithMap(nz))player.pos.z=nz.z;
+  player.pos.y+=player.vel.y*dt;
+  if(player.pos.y<PLAYER_HEIGHT)player.pos.y=PLAYER_HEIGHT;
+  player.pos.x=Math.max(-14.5,Math.min(14.5,player.pos.x));
+  player.pos.z=Math.max(-15.5,Math.min(11.5,player.pos.z));
+  camera.position.copy(player.pos);
+  camera.rotation.order='YXZ';camera.rotation.y=player.yaw;camera.rotation.x=player.pitch;
+  hostages.forEach(h=>{
+    if(!h.rescued&&player.pos.distanceTo(h.mesh.position)<1.5){
+      h.rescued=true;h.mesh.visible=false;updateHostageUI(h.id,true);
+    }
+  });
+  if(hostages.every(h=>h.rescued))endGame(true);
+}
+
+let animTime=0;
+function animateHumanoids(dt){
+  animTime+=dt;
+  enemies.forEach(e=>{
+    if(!e.alive)return;
+    const s=e.state!=='shoot'?animTime*5:0;
+    if(e.mesh.children[2])e.mesh.children[2].rotation.x=Math.sin(s)*.5;
+    if(e.mesh.children[3])e.mesh.children[3].rotation.x=-Math.sin(s)*.5;
+    if(e.mesh.children[4])e.mesh.children[4].rotation.x=-Math.sin(s)*.4;
+    if(e.mesh.children[5])e.mesh.children[5].rotation.x=Math.sin(s)*.4;
+  });
+  hostages.forEach(h=>{if(!h.rescued)h.mesh.position.y=Math.sin(animTime*1.5+h.id)*.04;});
+}
+
+function loop(ts){
+  requestAnimationFrame(loop);
+  const dt=Math.min((ts-lastTime)/1000,.05);lastTime=ts;
+  if(gameState==='playing'){
+    timeLeft-=dt;
+    document.getElementById('timer').textContent=formatTime(Math.max(0,timeLeft));
+    if(timeLeft<=0){endGame(false);return;}
+    updatePlayer(dt);updateEnemies(dt);updateBullets(dt);animateHumanoids(dt);drawMinimap();
+  }
+  renderer.render(scene,camera);
+}
+window.addEventListener('resize',()=>{
+  renderer.setSize(window.innerWidth,window.innerHeight);
+  camera.aspect=window.innerWidth/window.innerHeight;camera.updateProjectionMatrix();
+});
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
