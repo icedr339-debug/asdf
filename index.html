@@ -1,354 +1,919 @@
 <!DOCTYPE html>
 <html lang="ko">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>AI TTS 음성 변환기</title>
-  <style>
-    * { box-sizing: border-box; }
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Operation Rescue</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #000; overflow: hidden; font-family: 'Courier New', monospace; }
+  #canvas { display: block; }
 
-    body {
-      margin: 0;
-      min-height: 100vh;
-      background: linear-gradient(135deg, #e3f2fd, #fce4ec);
-      font-family: Arial, sans-serif;
-      color: #333;
-    }
+  /* HUD */
+  #hud {
+    position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+    pointer-events: none; z-index: 10;
+  }
+  #crosshair {
+    position: absolute; top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    width: 20px; height: 20px;
+  }
+  #crosshair::before, #crosshair::after {
+    content: ''; position: absolute; background: rgba(255,255,255,0.85);
+  }
+  #crosshair::before { width: 2px; height: 100%; left: 50%; transform: translateX(-50%); }
+  #crosshair::after  { height: 2px; width: 100%; top: 50%; transform: translateY(-50%); }
 
-    .container {
-      width: min(900px, 92%);
-      margin: 40px auto;
-      background: #ffffff;
-      border-radius: 24px;
-      padding: 28px;
-      box-shadow: 0 15px 35px rgba(0, 0, 0, 0.16);
-    }
+  #top-bar {
+    position: absolute; top: 0; left: 0; right: 0;
+    padding: 16px 24px;
+    display: flex; justify-content: space-between; align-items: center;
+    background: linear-gradient(to bottom, rgba(0,0,0,0.6), transparent);
+  }
+  .mission-label {
+    color: #ff4444; font-size: 11px; letter-spacing: 3px; text-transform: uppercase;
+    font-weight: bold;
+  }
+  .mission-title {
+    color: #fff; font-size: 14px; letter-spacing: 1px; margin-top: 2px;
+  }
+  #timer {
+    color: #ffcc00; font-size: 22px; font-weight: bold; letter-spacing: 2px;
+  }
+  #score-area { text-align: right; }
+  .score-label { color: #aaa; font-size: 10px; letter-spacing: 2px; }
+  .score-value { color: #fff; font-size: 16px; font-weight: bold; }
 
-    h1 {
-      margin: 0 0 8px;
-      text-align: center;
-      font-size: 28px;
-    }
+  #bottom-bar {
+    position: absolute; bottom: 0; left: 0; right: 0;
+    padding: 20px 28px;
+    display: flex; justify-content: space-between; align-items: flex-end;
+    background: linear-gradient(to top, rgba(0,0,0,0.7), transparent);
+  }
+  #health-block { display: flex; flex-direction: column; gap: 4px; }
+  .stat-label { color: #aaa; font-size: 10px; letter-spacing: 2px; }
+  .stat-value { color: #fff; font-size: 28px; font-weight: bold; }
+  #health-bar-wrap { width: 140px; height: 4px; background: rgba(255,255,255,0.15); border-radius: 2px; }
+  #health-bar { height: 100%; width: 100%; background: #44ff88; border-radius: 2px; transition: width .3s, background .3s; }
 
-    .subtitle {
-      text-align: center;
-      color: #777;
-      margin-bottom: 24px;
-      font-size: 14px;
-    }
+  #ammo-block { text-align: right; }
+  #ammo-value { color: #fff; font-size: 32px; font-weight: bold; }
+  #ammo-reserve { color: #888; font-size: 16px; }
+  #weapon-name { color: #ffcc00; font-size: 11px; letter-spacing: 2px; margin-top: 2px; }
 
-    .info {
-      padding: 14px;
-      margin-bottom: 20px;
-      border-radius: 14px;
-      background: #e8f5e9;
-      color: #2e7d32;
-      font-size: 14px;
-      line-height: 1.6;
-    }
+  #hostage-panel {
+    position: absolute; right: 28px; top: 80px;
+    display: flex; flex-direction: column; gap: 8px;
+  }
+  .hostage-item {
+    display: flex; align-items: center; gap: 8px;
+    background: rgba(0,0,0,0.45); padding: 6px 12px; border-radius: 4px;
+    border-left: 3px solid #ffcc00;
+  }
+  .hostage-icon { color: #ffcc00; font-size: 14px; }
+  .hostage-name { color: #fff; font-size: 11px; letter-spacing: 1px; }
+  .hostage-status { font-size: 10px; }
+  .hostage-status.safe { color: #44ff88; }
+  .hostage-status.captive { color: #ff8844; }
 
-    .option-box {
-      display: grid;
-      grid-template-columns: 1fr 1fr 1fr;
-      gap: 10px;
-      margin-bottom: 14px;
-    }
+  #kill-feed {
+    position: absolute; left: 20px; top: 80px;
+    display: flex; flex-direction: column; gap: 4px;
+  }
+  .kill-entry {
+    background: rgba(0,0,0,0.5); padding: 4px 10px;
+    font-size: 11px; color: #fff; border-radius: 3px;
+    animation: fadeKill 3s forwards;
+  }
+  .kill-entry .killer { color: #44ff88; }
+  .kill-entry .victim { color: #ff4444; }
+  @keyframes fadeKill { 0%,70%{opacity:1} 100%{opacity:0} }
 
-    select, input {
-      height: 44px;
-      padding: 0 12px;
-      border: 1px solid #ddd;
-      border-radius: 12px;
-      font-size: 14px;
-      outline: none;
-    }
+  #minimap {
+    position: absolute; bottom: 100px; right: 28px;
+    width: 140px; height: 140px;
+    background: rgba(0,0,0,0.65); border: 1px solid rgba(255,255,255,0.15);
+    border-radius: 4px; overflow: hidden;
+  }
+  #minimap canvas { width: 100%; height: 100%; }
 
-    textarea {
-      width: 100%;
-      min-height: 180px;
-      resize: vertical;
-      padding: 16px;
-      border: 1px solid #ddd;
-      border-radius: 16px;
-      font-size: 16px;
-      line-height: 1.5;
-      outline: none;
-      font-family: Arial, sans-serif;
-    }
+  /* Overlay screens */
+  .screen {
+    position: fixed; inset: 0; z-index: 100;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    background: rgba(0,0,0,0.88);
+  }
+  .screen.hidden { display: none; }
 
-    textarea:focus, select:focus, input:focus {
-      border-color: #42a5f5;
-      box-shadow: 0 0 0 3px rgba(66, 165, 245, 0.15);
-    }
+  #start-screen { background: #000; }
+  .game-logo {
+    font-size: 48px; font-weight: 900; letter-spacing: 6px; color: #fff;
+    text-transform: uppercase; margin-bottom: 4px;
+  }
+  .game-logo span { color: #ff4444; }
+  .game-sub { color: #888; font-size: 13px; letter-spacing: 4px; margin-bottom: 48px; }
+  .btn-start {
+    background: #ff4444; color: #fff; border: none; cursor: pointer;
+    padding: 14px 48px; font-size: 14px; font-family: inherit;
+    letter-spacing: 3px; text-transform: uppercase; font-weight: bold;
+    border-radius: 3px; transition: background .2s;
+  }
+  .btn-start:hover { background: #ff6666; }
+  .controls-hint {
+    margin-top: 36px; color: #444; font-size: 11px; letter-spacing: 1px;
+    text-align: center; line-height: 2;
+  }
+  .controls-hint strong { color: #888; }
 
-    .label {
-      font-weight: bold;
-      margin-bottom: 6px;
-    }
+  #pause-screen .pause-title { color: #fff; font-size: 32px; letter-spacing: 4px; margin-bottom: 24px; }
+  #pause-screen .pause-hint { color: #888; font-size: 12px; letter-spacing: 2px; }
 
-    .button-row {
-      display: flex;
-      gap: 10px;
-      justify-content: flex-end;
-      flex-wrap: wrap;
-      margin-top: 14px;
-    }
+  #win-screen .result-title { color: #44ff88; font-size: 40px; letter-spacing: 4px; margin-bottom: 12px; }
+  #lose-screen .result-title { color: #ff4444; font-size: 40px; letter-spacing: 4px; margin-bottom: 12px; }
+  .result-sub { color: #888; font-size: 13px; letter-spacing: 3px; margin-bottom: 36px; }
+  .result-stats { color: #ccc; font-size: 14px; line-height: 2.2; margin-bottom: 36px; text-align: center; }
+  .result-stats span { color: #fff; font-weight: bold; }
 
-    button, .download-link {
-      border: none;
-      border-radius: 12px;
-      padding: 0 18px;
-      height: 46px;
-      font-size: 15px;
-      cursor: pointer;
-      transition: 0.15s;
-      font-weight: bold;
-      text-decoration: none;
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-    }
+  #hit-indicator {
+    position: fixed; inset: 0; pointer-events: none; z-index: 20;
+    border: 3px solid transparent; transition: border-color .1s;
+  }
+  #hit-indicator.show { border-color: rgba(255,50,50,0.6); animation: hitFlash .3s forwards; }
+  @keyframes hitFlash { 0%{opacity:1} 100%{opacity:0; border-color:transparent;} }
 
-    button:hover, .download-link:hover {
-      transform: translateY(-2px);
-      opacity: 0.9;
-    }
-
-    button:disabled {
-      cursor: not-allowed;
-      opacity: 0.6;
-      transform: none;
-    }
-
-    .make-btn {
-      background: #42a5f5;
-      color: white;
-    }
-
-    .clear-btn {
-      background: #b0bec5;
-      color: white;
-    }
-
-    .download-link {
-      background: #7e57c2;
-      color: white;
-    }
-
-    .hidden { display: none; }
-
-    .status {
-      min-height: 24px;
-      margin-top: 14px;
-      color: #555;
-      font-size: 14px;
-    }
-
-    .result-box {
-      margin-top: 20px;
-      padding: 18px;
-      border-radius: 18px;
-      background: #f7f9fb;
-      border: 1px solid #edf1f5;
-    }
-
-    audio {
-      width: 100%;
-      margin-top: 10px;
-    }
-
-    .help {
-      margin-top: 12px;
-      font-size: 13px;
-      color: #777;
-      line-height: 1.6;
-    }
-
-    @media (max-width: 700px) {
-      .option-box { grid-template-columns: 1fr; }
-      .button-row { justify-content: stretch; }
-      button, .download-link { width: 100%; }
-    }
-  </style>
+  #shoot-flash {
+    position: fixed; inset: 0; pointer-events: none; z-index: 20;
+    background: rgba(255,220,100,0); transition: background .05s;
+  }
+  #shoot-flash.show { animation: muzzle .1s forwards; }
+  @keyframes muzzle { 0%{background:rgba(255,220,100,0.08)} 100%{background:rgba(255,220,100,0)} }
+</style>
 </head>
 <body>
-  <div class="container">
-    <h1>AI TTS 음성 변환기</h1>
-    <div class="subtitle">텍스트를 AI 음성 mp3 파일로 변환합니다</div>
 
-    <div class="info">
-      현재 구조: GitHub Pages 화면 → Google Apps Script 서버 → OpenAI TTS API → mp3 음성 반환<br />
-      API Key는 index.html에 들어가지 않고 Apps Script의 스크립트 속성에 저장됩니다.
-    </div>
+<canvas id="canvas"></canvas>
 
-    <div class="option-box">
-      <select id="modelSelect">
-        <option value="tts-1">tts-1 빠른 생성</option>
-        <option value="tts-1-hd">tts-1-hd 고품질</option>
-      </select>
+<div id="hud">
+  <div id="crosshair"></div>
 
-      <select id="voiceSelect">
-        <option value="alloy">alloy</option>
-        <option value="echo">echo</option>
-        <option value="fable">fable</option>
-        <option value="onyx">onyx</option>
-        <option value="nova">nova</option>
-        <option value="shimmer">shimmer</option>
-      </select>
-
-      <input id="speedInput" type="number" min="0.25" max="4.0" step="0.05" value="1.0" placeholder="속도" />
-    </div>
-
+  <div id="top-bar">
     <div>
-      <div class="label">변환할 텍스트</div>
-      <textarea id="textInput" placeholder="음성으로 바꿀 문장을 입력하세요. 예: 안녕하세요. 오늘은 Firebase와 OpenAI API를 활용한 웹페이지 제작을 배워보겠습니다."></textarea>
+      <div class="mission-label">⬛ Mission Active</div>
+      <div class="mission-title">Operation Rescue — Sector 7</div>
     </div>
-
-    <div class="button-row">
-      <button class="clear-btn" id="clearBtn">초기화</button>
-      <button class="make-btn" id="makeBtn">음성 만들기</button>
-    </div>
-
-    <div id="status" class="status"></div>
-
-    <div id="resultBox" class="result-box hidden">
-      <div class="label">생성된 음성</div>
-      <audio id="audioPlayer" controls></audio>
-      <div class="button-row">
-        <a id="downloadLink" class="download-link" href="#" download="tts-audio.mp3">mp3 다운로드</a>
-      </div>
-    </div>
-
-    <div class="help">
-      긴 문장은 생성 시간이 오래 걸릴 수 있습니다. 처음에는 짧은 문장으로 테스트해보세요.<br />
-      속도는 0.25부터 4.0까지 조절할 수 있습니다.
+    <div id="timer">02:30</div>
+    <div id="score-area">
+      <div class="score-label">Enemies Down</div>
+      <div class="score-value" id="kill-count">0 / 5</div>
     </div>
   </div>
 
-  <script>
-    const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxzvCeCidpIBm3Ez_AbmzTRrvzCkPa_7x-irAazDPzljPmuqjjHZOqXxfyS1vNh7tX1/exec';
+  <div id="kill-feed"></div>
 
-    const textInput = document.getElementById('textInput');
-    const modelSelect = document.getElementById('modelSelect');
-    const voiceSelect = document.getElementById('voiceSelect');
-    const speedInput = document.getElementById('speedInput');
-    const makeBtn = document.getElementById('makeBtn');
-    const clearBtn = document.getElementById('clearBtn');
-    const statusBox = document.getElementById('status');
-    const resultBox = document.getElementById('resultBox');
-    const audioPlayer = document.getElementById('audioPlayer');
-    const downloadLink = document.getElementById('downloadLink');
+  <div id="hostage-panel">
+    <div class="hostage-item" id="h1">
+      <span class="hostage-icon">◉</span>
+      <div>
+        <div class="hostage-name">CIVILIAN A</div>
+        <div class="hostage-status captive" id="h1-status">CAPTIVE</div>
+      </div>
+    </div>
+    <div class="hostage-item" id="h2">
+      <span class="hostage-icon">◉</span>
+      <div>
+        <div class="hostage-name">CIVILIAN B</div>
+        <div class="hostage-status captive" id="h2-status">CAPTIVE</div>
+      </div>
+    </div>
+    <div class="hostage-item" id="h3">
+      <span class="hostage-icon">◉</span>
+      <div>
+        <div class="hostage-name">CIVILIAN C</div>
+        <div class="hostage-status captive" id="h3-status">CAPTIVE</div>
+      </div>
+    </div>
+  </div>
 
-    makeBtn.addEventListener('click', makeSpeech);
-    clearBtn.addEventListener('click', clearPage);
+  <div id="minimap"><canvas id="minimap-canvas" width="140" height="140"></canvas></div>
 
-    textInput.addEventListener('keydown', function(event) {
-      if (event.key === 'Enter' && event.ctrlKey) {
-        makeSpeech();
+  <div id="bottom-bar">
+    <div id="health-block">
+      <div class="stat-label">Health</div>
+      <div class="stat-value" id="health-val">100</div>
+      <div id="health-bar-wrap"><div id="health-bar"></div></div>
+    </div>
+    <div id="ammo-block">
+      <div class="stat-label">Ammo</div>
+      <div><span id="ammo-value">30</span><span id="ammo-reserve"> / 90</span></div>
+      <div id="weapon-name">M4A1 CARBINE</div>
+    </div>
+  </div>
+</div>
+
+<div id="hit-indicator"></div>
+<div id="shoot-flash"></div>
+
+<!-- Screens -->
+<div class="screen" id="start-screen">
+  <div class="game-logo">OPERATION <span>RESCUE</span></div>
+  <div class="game-sub">Hostage Extraction Protocol</div>
+  <button class="btn-start" id="start-btn">START MISSION</button>
+  <div class="controls-hint">
+    <strong>WASD</strong> — Move &nbsp;|&nbsp; <strong>Mouse</strong> — Look &nbsp;|&nbsp; <strong>Click</strong> — Shoot<br>
+    <strong>ESC</strong> — Pause &nbsp;|&nbsp; <strong>R</strong> — Reload &nbsp;|&nbsp; Approach hostage to <strong>Rescue</strong>
+  </div>
+</div>
+
+<div class="screen hidden" id="pause-screen">
+  <div class="pause-title">PAUSED</div>
+  <div class="pause-hint">Press ESC to resume</div>
+</div>
+
+<div class="screen hidden" id="win-screen">
+  <div class="result-title">MISSION COMPLETE</div>
+  <div class="result-sub">All hostages rescued</div>
+  <div class="result-stats" id="win-stats"></div>
+  <button class="btn-start" id="win-btn">PLAY AGAIN</button>
+</div>
+
+<div class="screen hidden" id="lose-screen">
+  <div class="result-title">MISSION FAILED</div>
+  <div class="result-sub">Time's up — Hostages not recovered</div>
+  <div class="result-stats" id="lose-stats"></div>
+  <button class="btn-start" id="lose-btn">TRY AGAIN</button>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+// ─── Constants ───────────────────────────────────────────────────────────────
+const W = window.innerWidth, H = window.innerHeight;
+const PLAYER_SPEED = 6, PLAYER_HEIGHT = 1.7, GRAVITY = -20;
+const ENEMY_SPEED = 2.5, ENEMY_SIGHT = 14, ENEMY_SHOOT_RANGE = 10;
+const BULLET_SPEED = 40, BULLET_LIFE = 1.2;
+const GAME_TIME = 150; // seconds
+
+// ─── Scene setup ─────────────────────────────────────────────────────────────
+const renderer = new THREE.WebGLRenderer({ canvas: document.getElementById('canvas'), antialias: true });
+renderer.setSize(W, H);
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.setClearColor(0x87CEEB);
+
+const scene = new THREE.Scene();
+scene.fog = new THREE.Fog(0x87CEEB, 18, 55);
+
+const camera = new THREE.PerspectiveCamera(75, W / H, 0.05, 100);
+camera.position.set(0, PLAYER_HEIGHT, 0);
+
+// ─── Lighting ────────────────────────────────────────────────────────────────
+const ambient = new THREE.AmbientLight(0xffeedd, 0.6);
+scene.add(ambient);
+
+const sun = new THREE.DirectionalLight(0xfff0d0, 1.2);
+sun.position.set(10, 20, 10);
+sun.castShadow = true;
+sun.shadow.mapSize.set(2048, 2048);
+sun.shadow.camera.near = 0.1;
+sun.shadow.camera.far = 80;
+sun.shadow.camera.left = -30; sun.shadow.camera.right = 30;
+sun.shadow.camera.top = 30; sun.shadow.camera.bottom = -30;
+scene.add(sun);
+
+const fillLight = new THREE.DirectionalLight(0xaaddff, 0.3);
+fillLight.position.set(-8, 5, -5);
+scene.add(fillLight);
+
+// ─── Materials ───────────────────────────────────────────────────────────────
+function mat(color, roughness = 0.85, metalness = 0) {
+  return new THREE.MeshStandardMaterial({ color, roughness, metalness });
+}
+const M = {
+  floor: mat(0x888070),
+  wall: mat(0xb0a090),
+  wallDark: mat(0x7a6e62),
+  roof: mat(0x6a5e52),
+  door: mat(0x5c3d28),
+  crate: mat(0xb87a3a),
+  metal: mat(0x778899, 0.4, 0.7),
+  sandbag: mat(0xd4b483),
+  enemy: mat(0x334422),
+  enemyHead: mat(0xc8a882),
+  player: mat(0x2244aa),
+  hostage: mat(0xffcc88),
+  hostageClothes: mat(0xdd6644),
+  bullet: mat(0xffee44, 0.2, 0.9),
+  grass: mat(0x4a7a2a),
+  concrete: mat(0x999080),
+  window: new THREE.MeshStandardMaterial({ color: 0x88ccff, transparent: true, opacity: 0.35, roughness: 0.1 }),
+  zone: new THREE.MeshStandardMaterial({ color: 0x44ff88, transparent: true, opacity: 0.25, roughness: 1 }),
+};
+
+// ─── Map Builder ─────────────────────────────────────────────────────────────
+const colliders = []; // { min, max } AABB list
+
+function box(w, h, d, material, rx=0, ry=0, rz=0) {
+  const g = new THREE.BoxGeometry(w, h, d);
+  const m = new THREE.Mesh(g, material);
+  m.castShadow = true; m.receiveShadow = true;
+  return m;
+}
+function addBox(scene, mat, x, y, z, w, h, d, ry=0) {
+  const m = box(w, h, d, mat);
+  m.position.set(x, y, z);
+  m.rotation.y = ry;
+  scene.add(m);
+  // AABB in world space (ignoring rotation for simplicity on axis-aligned boxes)
+  colliders.push({ min: new THREE.Vector3(x-w/2, y-h/2, z-d/2), max: new THREE.Vector3(x+w/2, y+h/2, z+d/2) });
+  return m;
+}
+
+function buildMap() {
+  // ── Ground ──
+  const ground = new THREE.Mesh(new THREE.PlaneGeometry(80, 80), M.floor);
+  ground.rotation.x = -Math.PI/2; ground.receiveShadow = true;
+  scene.add(ground);
+
+  // grass surround
+  const grass = new THREE.Mesh(new THREE.PlaneGeometry(200, 200), M.grass);
+  grass.rotation.x = -Math.PI/2; grass.position.y = -0.01;
+  scene.add(grass);
+
+  // ── Main building (hollow) ──
+  const BW = 20, BD = 16, BH = 4;
+  // floor inside building (slightly raised)
+  const bfloor = new THREE.Mesh(new THREE.PlaneGeometry(BW, BD), M.concrete);
+  bfloor.rotation.x = -Math.PI/2; bfloor.position.set(0, 0.01, -8);
+  bfloor.receiveShadow = true; scene.add(bfloor);
+
+  // North wall
+  addBox(scene, M.wall, 0, BH/2, -16, BW, BH, 0.5);
+  // South wall with door gap
+  addBox(scene, M.wall, -7, BH/2, 0, 6, BH, 0.5);
+  addBox(scene, M.wall,  7, BH/2, 0, 6, BH, 0.5);
+  addBox(scene, M.wall,  0, BH-0.75, 0, 2, 1.5, 0.5); // lintel
+  // East wall with window gap
+  addBox(scene, M.wall, BW/2, BH/2, -8, 0.5, BH, BD);
+  // West wall with window gap
+  addBox(scene, M.wall, -BW/2, BH/2, -8, 0.5, BH, BD);
+
+  // Interior dividing wall (creates rooms)
+  addBox(scene, M.wallDark, 0, BH/2, -9, 8, BH, 0.4);
+  addBox(scene, M.wallDark, 5.8, BH/2, -9, 3.5, BH, 0.4);
+  addBox(scene, M.wallDark, -5.8, BH/2, -9, 3.5, BH, 0.4);
+
+  // Roof
+  const roof = new THREE.Mesh(new THREE.PlaneGeometry(BW+1, BD+1), M.roof);
+  roof.rotation.x = Math.PI/2; roof.position.set(0, BH, -8);
+  roof.castShadow = true; scene.add(roof);
+
+  // ── Side shed ──
+  addBox(scene, M.wall, 14, 1.5, -5, 8, 3, 0.4);  // front
+  addBox(scene, M.wall, 14, 1.5, -10, 8, 3, 0.4); // back
+  addBox(scene, M.wall, 18, 1.5, -7.5, 0.4, 3, 5.4); // right
+  addBox(scene, M.wall, 10, 1.5, -7.5, 0.4, 3, 5.4); // left
+  const shedRoof = new THREE.Mesh(new THREE.PlaneGeometry(8.5, 5.5), M.roof);
+  shedRoof.rotation.x = Math.PI/2; shedRoof.position.set(14, 3.05, -7.5);
+  scene.add(shedRoof);
+
+  // ── Courtyard walls ──
+  addBox(scene, M.wall, 0, 1.0, 12, 30, 2, 0.5);   // south perimeter
+  addBox(scene, M.wall, -15, 1.0, 0, 0.5, 2, 24);  // west perimeter
+  addBox(scene, M.wall, 15, 1.0, 0, 0.5, 2, 24);   // east perimeter
+
+  // ── Cover / crates / sandbags ──
+  addBox(scene, M.crate, 5, 0.5, 4, 1.2, 1, 1.2);
+  addBox(scene, M.crate, 6.2, 0.5, 4, 1.2, 1, 1.2);
+  addBox(scene, M.crate, 5.6, 1.5, 4, 1.2, 1, 1.2);
+  addBox(scene, M.crate, -5, 0.5, 5, 1.2, 1, 1.2);
+  addBox(scene, M.crate, -6, 1.5, 5, 1.2, 1, 1.2);
+  addBox(scene, M.sandbag, 2, 0.35, 8, 3, 0.7, 1);
+  addBox(scene, M.sandbag, -3, 0.35, 8, 3, 0.7, 1);
+  addBox(scene, M.metal, 8, 0.5, 8, 2, 1, 0.8); // barrel
+  addBox(scene, M.metal, -9, 0.5, 3, 0.8, 1.2, 0.8);
+  addBox(scene, M.metal, -9, 1.7, 3, 0.8, 1.2, 0.8);
+
+  // ── Windows (decorative glass) ──
+  const wg = new THREE.PlaneGeometry(1.8, 1.2);
+  [-6, 6].forEach(xoff => {
+    const wm = new THREE.Mesh(wg, M.window);
+    wm.position.set(BW/2+0.01, 2.2, xoff - 8); wm.rotation.y = Math.PI/2;
+    scene.add(wm);
+  });
+
+  // ── Extraction zone ──
+  const ezGeo = new THREE.PlaneGeometry(4, 4);
+  const ez = new THREE.Mesh(ezGeo, M.zone);
+  ez.rotation.x = -Math.PI/2; ez.position.set(-12, 0.02, 10);
+  scene.add(ez);
+  // marker post
+  const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.06,0.06,2.5,8), mat(0x44ff88));
+  pole.position.set(-12, 1.25, 8.5); scene.add(pole);
+  const flag = new THREE.Mesh(new THREE.PlaneGeometry(0.8,0.5), mat(0x44ff88));
+  flag.position.set(-11.6, 2.4, 8.5); scene.add(flag);
+
+  // ── Some concrete pillars inside building ──
+  [[3, 2, -5], [-3, 2, -5], [3, 2, -13], [-3, 2, -13]].forEach(([x,y,z]) => {
+    addBox(scene, M.concrete, x, y, z, 0.5, 4, 0.5);
+  });
+}
+
+buildMap();
+
+// ─── Player ──────────────────────────────────────────────────────────────────
+const player = {
+  pos: new THREE.Vector3(0, PLAYER_HEIGHT, 8),
+  vel: new THREE.Vector3(),
+  yaw: 0, pitch: 0,
+  health: 100,
+  ammo: 30, reserve: 90,
+  kills: 0,
+  reloading: false,
+  onGround: true,
+};
+camera.position.copy(player.pos);
+
+// ─── Enemies ─────────────────────────────────────────────────────────────────
+const ENEMY_POSITIONS = [
+  [4, 0, -6], [-4, 0, -6],
+  [13, 0, -5], [13, 0, -10],
+  [0, 0, -13],
+];
+const ENEMY_PATROL_ROUTES = [
+  [[4,-6],[4,-4],[6,-4],[6,-6]],
+  [[-4,-6],[-4,-4],[-6,-4],[-6,-6]],
+  [[13,-5],[13,-8],[11,-8],[11,-5]],
+  [[13,-10],[13,-12],[11,-12],[11,-10]],
+  [[0,-13],[2,-13],[2,-11],[0,-11]],
+];
+
+function makeHumanoid(bodyMat, headMat) {
+  const g = new THREE.Group();
+  // body
+  const body = new THREE.Mesh(new THREE.BoxGeometry(0.5,0.7,0.3), bodyMat);
+  body.position.y = 0.95; body.castShadow = true; g.add(body);
+  // head
+  const head = new THREE.Mesh(new THREE.BoxGeometry(0.32,0.32,0.32), headMat);
+  head.position.y = 1.52; head.castShadow = true; g.add(head);
+  // legs
+  [[-0.14,0.35,0],[0.14,0.35,0]].forEach(([x,y,z]) => {
+    const leg = new THREE.Mesh(new THREE.BoxGeometry(0.2,0.7,0.2), bodyMat);
+    leg.position.set(x,y,z); leg.castShadow = true; g.add(leg);
+  });
+  // arms
+  [[-0.38,0.9,0],[0.38,0.9,0]].forEach(([x,y,z]) => {
+    const arm = new THREE.Mesh(new THREE.BoxGeometry(0.16,0.56,0.16), bodyMat);
+    arm.position.set(x,y,z); arm.castShadow = true; g.add(arm);
+  });
+  return g;
+}
+
+const enemies = ENEMY_POSITIONS.map((pos, i) => {
+  const mesh = makeHumanoid(M.enemy, M.enemyHead);
+  mesh.position.set(pos[0], pos[1], pos[2]);
+  scene.add(mesh);
+  return {
+    mesh, health: 100, alive: true,
+    state: 'patrol', // patrol | alert | chase | shoot
+    patrolRoute: ENEMY_PATROL_ROUTES[i].map(([x,z]) => new THREE.Vector3(x, 0, z)),
+    patrolIdx: 0, patrolTimer: 0,
+    shootCooldown: 0,
+    alertTimer: 0,
+  };
+});
+
+// ─── Hostages ────────────────────────────────────────────────────────────────
+const HOSTAGE_POSITIONS = [
+  [4, 0, -12], [-4, 0, -12], [0, 0, -6]
+];
+const hostages = HOSTAGE_POSITIONS.map((pos, i) => {
+  const mesh = makeHumanoid(M.hostage, M.hostageClothes);
+  mesh.position.set(pos[0], pos[1], pos[2]);
+  scene.add(mesh);
+  return { mesh, rescued: false, id: i+1 };
+});
+
+// ─── Bullets ─────────────────────────────────────────────────────────────────
+const bullets = [];
+function spawnBullet(origin, dir, isEnemy=false) {
+  const geo = new THREE.SphereGeometry(0.05, 4, 4);
+  const mat2 = new THREE.MeshStandardMaterial({ color: isEnemy ? 0xff4444 : 0xffee44, emissive: isEnemy?0xff0000:0xffdd00, emissiveIntensity: 1 });
+  const mesh = new THREE.Mesh(geo, mat2);
+  mesh.position.copy(origin);
+  scene.add(mesh);
+  bullets.push({ mesh, vel: dir.clone().multiplyScalar(BULLET_SPEED), life: BULLET_LIFE, isEnemy });
+}
+
+// ─── Input ───────────────────────────────────────────────────────────────────
+const keys = {};
+document.addEventListener('keydown', e => { keys[e.code] = true; });
+document.addEventListener('keyup',   e => { keys[e.code] = false; });
+
+let pointerLocked = false;
+document.addEventListener('mousemove', e => {
+  if (!pointerLocked || gameState !== 'playing') return;
+  player.yaw   -= e.movementX * 0.002;
+  player.pitch -= e.movementY * 0.002;
+  player.pitch = Math.max(-1.2, Math.min(1.2, player.pitch));
+});
+document.addEventListener('click', () => {
+  if (gameState !== 'playing') return;
+  shootPlayer();
+});
+document.addEventListener('keydown', e => {
+  if (e.code === 'KeyR' && gameState === 'playing') startReload();
+  if (e.code === 'Escape') {
+    if (gameState === 'playing') pauseGame();
+    else if (gameState === 'paused') resumeGame();
+  }
+});
+
+// ─── Pointer Lock ────────────────────────────────────────────────────────────
+document.addEventListener('pointerlockchange', () => {
+  pointerLocked = !!document.pointerLockElement;
+});
+
+// ─── Game State ──────────────────────────────────────────────────────────────
+let gameState = 'menu'; // menu | playing | paused | win | lose
+let timeLeft = GAME_TIME;
+let lastTime = 0;
+
+function showScreen(id) {
+  ['start-screen','pause-screen','win-screen','lose-screen'].forEach(s => {
+    document.getElementById(s).classList.add('hidden');
+  });
+  if (id) document.getElementById(id).classList.remove('hidden');
+}
+
+function startGame() {
+  // reset
+  player.pos.set(0, PLAYER_HEIGHT, 8);
+  player.vel.set(0,0,0);
+  player.yaw = Math.PI; player.pitch = 0;
+  player.health = 100; player.ammo = 30; player.reserve = 90;
+  player.kills = 0; player.reloading = false;
+  timeLeft = GAME_TIME;
+  enemies.forEach((e, i) => {
+    e.alive = true; e.health = 100; e.state = 'patrol';
+    e.patrolIdx = 0; e.shootCooldown = 0; e.alertTimer = 0;
+    e.mesh.visible = true;
+    const p = ENEMY_POSITIONS[i];
+    e.mesh.position.set(p[0], p[1], p[2]);
+  });
+  hostages.forEach((h, i) => {
+    h.rescued = false; h.mesh.visible = true;
+    const p = HOSTAGE_POSITIONS[i];
+    h.mesh.position.set(p[0], p[1], p[2]);
+  });
+  updateHUD();
+  showScreen(null);
+  document.getElementById('hud').style.opacity = '1';
+  document.body.requestPointerLock();
+  gameState = 'playing';
+}
+
+function pauseGame() {
+  gameState = 'paused';
+  document.exitPointerLock();
+  showScreen('pause-screen');
+}
+function resumeGame() {
+  gameState = 'playing';
+  document.body.requestPointerLock();
+  showScreen(null);
+}
+function endGame(win) {
+  gameState = win ? 'win' : 'lose';
+  document.exitPointerLock();
+  const rescued = hostages.filter(h=>h.rescued).length;
+  const stats = `Enemies eliminated: <span>${player.kills}</span><br>Hostages rescued: <span>${rescued} / 3</span><br>Time remaining: <span>${formatTime(timeLeft)}</span>`;
+  if (win) {
+    document.getElementById('win-stats').innerHTML = stats;
+    showScreen('win-screen');
+  } else {
+    document.getElementById('lose-stats').innerHTML = stats;
+    showScreen('lose-screen');
+  }
+}
+
+document.getElementById('start-btn').onclick = startGame;
+document.getElementById('win-btn').onclick = startGame;
+document.getElementById('lose-btn').onclick = startGame;
+
+// ─── Shooting ────────────────────────────────────────────────────────────────
+function shootPlayer() {
+  if (player.ammo <= 0 || player.reloading) return;
+  player.ammo--;
+  updateAmmo();
+  const dir = new THREE.Vector3(0,0,-1).applyEuler(new THREE.Euler(player.pitch, player.yaw, 0, 'YXZ'));
+  spawnBullet(camera.position.clone().add(dir.clone().multiplyScalar(0.5)), dir, false);
+  document.getElementById('shoot-flash').classList.remove('show');
+  void document.getElementById('shoot-flash').offsetWidth;
+  document.getElementById('shoot-flash').classList.add('show');
+  if (player.ammo === 0 && player.reserve > 0) setTimeout(startReload, 300);
+}
+function startReload() {
+  if (player.reloading || player.reserve <= 0 || player.ammo === 30) return;
+  player.reloading = true;
+  setTimeout(() => {
+    const need = 30 - player.ammo;
+    const get = Math.min(need, player.reserve);
+    player.ammo += get; player.reserve -= get;
+    player.reloading = false;
+    updateAmmo();
+  }, 1800);
+}
+
+function enemyShoot(enemy) {
+  const dir = new THREE.Vector3().subVectors(camera.position, enemy.mesh.position).normalize();
+  dir.x += (Math.random()-0.5)*0.15;
+  dir.y += (Math.random()-0.5)*0.08;
+  spawnBullet(enemy.mesh.position.clone().add(new THREE.Vector3(0,1.4,0)), dir, true);
+}
+
+// ─── Collision ───────────────────────────────────────────────────────────────
+function collidesWithMap(pos, r=0.35) {
+  const pMin = new THREE.Vector3(pos.x-r, pos.y-PLAYER_HEIGHT, pos.z-r);
+  const pMax = new THREE.Vector3(pos.x+r, pos.y+0.5, pos.z+r);
+  for (const c of colliders) {
+    if (pMin.x < c.max.x && pMax.x > c.min.x &&
+        pMin.y < c.max.y && pMax.y > c.min.y &&
+        pMin.z < c.max.z && pMax.z > c.min.z) return true;
+  }
+  return false;
+}
+
+// ─── HUD updates ─────────────────────────────────────────────────────────────
+function updateHUD() { updateHealth(); updateAmmo(); updateKills(); }
+function updateHealth() {
+  const h = Math.max(0, player.health);
+  document.getElementById('health-val').textContent = h;
+  document.getElementById('health-bar').style.width = h + '%';
+  document.getElementById('health-bar').style.background = h > 50 ? '#44ff88' : h > 25 ? '#ffcc00' : '#ff4444';
+}
+function updateAmmo() {
+  document.getElementById('ammo-value').textContent = player.ammo;
+  document.getElementById('ammo-reserve').textContent = ' / ' + player.reserve;
+}
+function updateKills() {
+  document.getElementById('kill-count').textContent = player.kills + ' / ' + enemies.length;
+}
+function formatTime(s) {
+  const m = Math.floor(s/60), sec = Math.floor(s%60);
+  return String(m).padStart(2,'0') + ':' + String(sec).padStart(2,'0');
+}
+function addKillFeed(name) {
+  const feed = document.getElementById('kill-feed');
+  const el = document.createElement('div');
+  el.className = 'kill-entry';
+  el.innerHTML = `<span class="killer">YOU</span> ▸ <span class="victim">${name}</span>`;
+  feed.appendChild(el);
+  setTimeout(() => el.remove(), 3100);
+}
+function updateHostageUI(id, rescued) {
+  const el = document.getElementById(`h${id}-status`);
+  el.textContent = rescued ? 'RESCUED' : 'CAPTIVE';
+  el.className = 'hostage-status ' + (rescued ? 'safe' : 'captive');
+}
+function showHit() {
+  const el = document.getElementById('hit-indicator');
+  el.classList.remove('show'); void el.offsetWidth; el.classList.add('show');
+}
+
+// ─── Minimap ─────────────────────────────────────────────────────────────────
+const mmCtx = document.getElementById('minimap-canvas').getContext('2d');
+function drawMinimap() {
+  const S = 140, scale = S/40, ox = S/2, oy = S/2;
+  mmCtx.clearRect(0,0,S,S);
+  mmCtx.fillStyle = 'rgba(0,0,0,0.5)'; mmCtx.fillRect(0,0,S,S);
+
+  // walls simplified
+  mmCtx.strokeStyle = 'rgba(200,180,150,0.7)'; mmCtx.lineWidth = 2;
+  mmCtx.strokeRect(ox + (-10)*scale, oy + (-16)*scale, 20*scale, 16*scale); // main building
+  mmCtx.strokeRect(ox + (10)*scale,  oy + (-10)*scale, 8*scale, 5*scale);  // shed
+  mmCtx.strokeRect(ox + (-15)*scale, oy + (-12)*scale, 30*scale, 24*scale); // courtyard
+
+  // extraction zone
+  mmCtx.fillStyle = 'rgba(68,255,136,0.3)';
+  mmCtx.fillRect(ox + (-14)*scale, oy + (8)*scale, 4*scale, 4*scale);
+
+  // enemies
+  enemies.forEach(e => {
+    if (!e.alive) return;
+    mmCtx.fillStyle = e.state === 'patrol' ? 'rgba(255,80,80,0.9)' : 'rgba(255,0,0,1)';
+    const ex = ox + e.mesh.position.x * scale;
+    const ey = oy + e.mesh.position.z * scale;
+    mmCtx.beginPath(); mmCtx.arc(ex, ey, 3, 0, Math.PI*2); mmCtx.fill();
+  });
+
+  // hostages
+  hostages.forEach(h => {
+    if (h.rescued) return;
+    mmCtx.fillStyle = 'rgba(255,200,50,0.9)';
+    const hx = ox + h.mesh.position.x * scale;
+    const hy = oy + h.mesh.position.z * scale;
+    mmCtx.beginPath(); mmCtx.arc(hx, hy, 3, 0, Math.PI*2); mmCtx.fill();
+  });
+
+  // player
+  const px = ox + player.pos.x * scale;
+  const pz = oy + player.pos.z * scale;
+  mmCtx.fillStyle = '#44aaff';
+  mmCtx.save(); mmCtx.translate(px, pz); mmCtx.rotate(player.yaw + Math.PI);
+  mmCtx.beginPath(); mmCtx.moveTo(0,-5); mmCtx.lineTo(-3,3); mmCtx.lineTo(3,3); mmCtx.closePath();
+  mmCtx.fill(); mmCtx.restore();
+}
+
+// ─── Enemy AI ────────────────────────────────────────────────────────────────
+function updateEnemies(dt) {
+  enemies.forEach((e, i) => {
+    if (!e.alive) return;
+    e.shootCooldown -= dt;
+    const distToPlayer = e.mesh.position.distanceTo(player.pos);
+
+    if (e.state === 'patrol') {
+      // move toward patrol point
+      const target = e.patrolRoute[e.patrolIdx];
+      const wp = new THREE.Vector3(target.x, 0, target.z);
+      const diff = new THREE.Vector3().subVectors(wp, e.mesh.position);
+      diff.y = 0;
+      if (diff.length() < 0.5) {
+        e.patrolIdx = (e.patrolIdx + 1) % e.patrolRoute.length;
+        e.patrolTimer = 0.5 + Math.random();
+      } else {
+        diff.normalize();
+        e.mesh.position.addScaledVector(diff, ENEMY_SPEED * dt);
+        e.mesh.rotation.y = Math.atan2(diff.x, diff.z);
       }
-    });
-
-    async function makeSpeech() {
-      const text = textInput.value.trim();
-      const model = modelSelect.value;
-      const voice = voiceSelect.value;
-      const speed = Number(speedInput.value || 1.0);
-
-      if (!text) {
-        alert('음성으로 변환할 텍스트를 입력해주세요.');
-        return;
+      // sight check
+      if (distToPlayer < ENEMY_SIGHT) { e.state = 'chase'; }
+    }
+    else if (e.state === 'chase') {
+      if (distToPlayer > ENEMY_SIGHT * 1.5) { e.state = 'patrol'; return; }
+      if (distToPlayer <= ENEMY_SHOOT_RANGE) { e.state = 'shoot'; return; }
+      const diff = new THREE.Vector3().subVectors(player.pos, e.mesh.position);
+      diff.y = 0; diff.normalize();
+      e.mesh.position.addScaledVector(diff, ENEMY_SPEED * 1.4 * dt);
+      e.mesh.rotation.y = Math.atan2(diff.x, diff.z);
+    }
+    else if (e.state === 'shoot') {
+      if (distToPlayer > ENEMY_SHOOT_RANGE * 1.2) { e.state = 'chase'; return; }
+      // face player
+      const diff = new THREE.Vector3().subVectors(player.pos, e.mesh.position);
+      e.mesh.rotation.y = Math.atan2(diff.x, diff.z);
+      // shoot
+      if (e.shootCooldown <= 0) {
+        e.shootCooldown = 1.2 + Math.random() * 0.8;
+        enemyShoot(e);
       }
+    }
+  });
+}
 
-      if (speed < 0.25 || speed > 4.0) {
-        alert('속도는 0.25부터 4.0 사이로 입력해주세요.');
-        return;
+// ─── Update bullets ──────────────────────────────────────────────────────────
+const _bpos = new THREE.Vector3(), _bprev = new THREE.Vector3();
+function updateBullets(dt) {
+  for (let i = bullets.length - 1; i >= 0; i--) {
+    const b = bullets[i];
+    _bprev.copy(b.mesh.position);
+    b.mesh.position.addScaledVector(b.vel, dt);
+    b.life -= dt;
+    if (b.life <= 0) { scene.remove(b.mesh); bullets.splice(i,1); continue; }
+
+    if (b.isEnemy) {
+      // hit player?
+      if (b.mesh.position.distanceTo(player.pos) < 0.5) {
+        player.health -= 12 + Math.round(Math.random()*8);
+        updateHealth(); showHit();
+        scene.remove(b.mesh); bullets.splice(i,1);
+        if (player.health <= 0) { endGame(false); return; }
+        continue;
       }
-
-      try {
-        setLoading(true);
-        resultBox.classList.add('hidden');
-        statusBox.textContent = 'Apps Script 서버에 TTS 요청을 보내는 중입니다.';
-
-        const response = await fetch(APPS_SCRIPT_URL, {
-          method: 'POST',
-          body: JSON.stringify({
-            type: 'tts',
-            text: text,
-            model: model,
-            voice: voice,
-            speed: speed
-          })
-        });
-
-        const data = await response.json();
-
-        if (data.error) {
-          throw new Error(data.error);
+    } else {
+      // hit enemy?
+      let hit = false;
+      enemies.forEach(e => {
+        if (!e.alive || hit) return;
+        if (b.mesh.position.distanceTo(e.mesh.position) < 0.7) {
+          e.health -= 35 + Math.round(Math.random()*20);
+          e.state = 'shoot';
+          if (e.health <= 0) {
+            e.alive = false; e.mesh.visible = false;
+            player.kills++;
+            updateKills();
+            addKillFeed('ENEMY ' + (enemies.indexOf(e)+1));
+          }
+          hit = true;
         }
-
-        if (!data.audioBase64) {
-          throw new Error('음성 데이터를 받지 못했습니다.');
-        }
-
-        const audioUrl = base64ToAudioUrl(data.audioBase64, 'audio/mpeg');
-
-        audioPlayer.src = audioUrl;
-        downloadLink.href = audioUrl;
-        downloadLink.download = makeFileName();
-        resultBox.classList.remove('hidden');
-        statusBox.textContent = '음성 생성 완료';
-      } catch (error) {
-        console.error(error);
-        statusBox.textContent = '요청 실패';
-        alert('오류가 발생했습니다.\n\n' + error.message);
-      } finally {
-        setLoading(false);
-      }
+      });
+      if (hit) { scene.remove(b.mesh); bullets.splice(i,1); continue; }
     }
-
-    function base64ToAudioUrl(base64, mimeType) {
-      const byteCharacters = atob(base64);
-      const byteArrays = [];
-
-      for (let offset = 0; offset < byteCharacters.length; offset += 512) {
-        const slice = byteCharacters.slice(offset, offset + 512);
-        const byteNumbers = new Array(slice.length);
-
-        for (let i = 0; i < slice.length; i++) {
-          byteNumbers[i] = slice.charCodeAt(i);
-        }
-
-        const byteArray = new Uint8Array(byteNumbers);
-        byteArrays.push(byteArray);
-      }
-
-      const blob = new Blob(byteArrays, { type: mimeType });
-      return URL.createObjectURL(blob);
+    // wall collision
+    if (collidesWithMap(b.mesh.position, 0.05)) {
+      scene.remove(b.mesh); bullets.splice(i,1);
     }
+  }
+}
 
-    function makeFileName() {
-      const now = new Date();
-      const year = now.getFullYear();
-      const month = String(now.getMonth() + 1).padStart(2, '0');
-      const day = String(now.getDate()).padStart(2, '0');
-      const hour = String(now.getHours()).padStart(2, '0');
-      const minute = String(now.getMinutes()).padStart(2, '0');
-      return `tts-${year}${month}${day}-${hour}${minute}.mp3`;
-    }
+// ─── Update player ───────────────────────────────────────────────────────────
+const _move = new THREE.Vector3();
+function updatePlayer(dt) {
+  _move.set(0,0,0);
+  if (keys['KeyW'] || keys['ArrowUp'])    _move.z -= 1;
+  if (keys['KeyS'] || keys['ArrowDown'])  _move.z += 1;
+  if (keys['KeyA'] || keys['ArrowLeft'])  _move.x -= 1;
+  if (keys['KeyD'] || keys['ArrowRight']) _move.x += 1;
+  _move.normalize().multiplyScalar(PLAYER_SPEED * dt);
 
-    function setLoading(isLoading) {
-      makeBtn.disabled = isLoading;
-      makeBtn.textContent = isLoading ? '생성 중...' : '음성 만들기';
-    }
+  const yawQ = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0,1,0), player.yaw);
+  _move.applyQuaternion(yawQ);
 
-    function clearPage() {
-      textInput.value = '';
-      statusBox.textContent = '';
-      audioPlayer.removeAttribute('src');
-      downloadLink.href = '#';
-      resultBox.classList.add('hidden');
+  // gravity
+  player.vel.y += GRAVITY * dt;
+  if (player.pos.y <= PLAYER_HEIGHT) { player.vel.y = 0; player.pos.y = PLAYER_HEIGHT; player.onGround = true; }
+
+  // try move X
+  const nx = player.pos.clone(); nx.x += _move.x;
+  if (!collidesWithMap(nx)) player.pos.x = nx.x;
+  // try move Z
+  const nz = player.pos.clone(); nz.z += _move.z;
+  if (!collidesWithMap(nz)) player.pos.z = nz.z;
+  // apply gravity
+  player.pos.y += player.vel.y * dt;
+  if (player.pos.y < PLAYER_HEIGHT) { player.pos.y = PLAYER_HEIGHT; }
+
+  camera.position.copy(player.pos);
+  camera.rotation.order = 'YXZ';
+  camera.rotation.y = player.yaw;
+  camera.rotation.x = player.pitch;
+
+  // clamp world bounds
+  player.pos.x = Math.max(-14.5, Math.min(14.5, player.pos.x));
+  player.pos.z = Math.max(-15.5, Math.min(11.5, player.pos.z));
+
+  // rescue check
+  hostages.forEach(h => {
+    if (!h.rescued && player.pos.distanceTo(h.mesh.position) < 1.5) {
+      h.rescued = true;
+      h.mesh.visible = false;
+      updateHostageUI(h.id, true);
     }
-  </script>
+  });
+
+  // win check: all rescued
+  if (hostages.every(h => h.rescued)) { endGame(true); return; }
+}
+
+// ─── Animate enemy limbs ─────────────────────────────────────────────────────
+let animTime = 0;
+function animateHumanoids(dt) {
+  animTime += dt;
+  enemies.forEach(e => {
+    if (!e.alive) return;
+    const moving = e.state !== 'shoot';
+    const spd = moving ? animTime * 5 : 0;
+    const legs = [e.mesh.children[2], e.mesh.children[3]];
+    const arms = [e.mesh.children[4], e.mesh.children[5]];
+    if (legs[0]) legs[0].rotation.x = Math.sin(spd) * 0.5;
+    if (legs[1]) legs[1].rotation.x = -Math.sin(spd) * 0.5;
+    if (arms[0]) arms[0].rotation.x = -Math.sin(spd) * 0.4;
+    if (arms[1]) arms[1].rotation.x = Math.sin(spd) * 0.4;
+  });
+  // hostage bob
+  hostages.forEach(h => {
+    if (!h.rescued) h.mesh.position.y = Math.sin(animTime * 1.5 + h.id) * 0.04;
+  });
+}
+
+// ─── Main Loop ───────────────────────────────────────────────────────────────
+function loop(ts) {
+  requestAnimationFrame(loop);
+  const dt = Math.min((ts - lastTime) / 1000, 0.05);
+  lastTime = ts;
+
+  if (gameState === 'playing') {
+    timeLeft -= dt;
+    document.getElementById('timer').textContent = formatTime(Math.max(0, timeLeft));
+    if (timeLeft <= 0) { endGame(false); return; }
+    updatePlayer(dt);
+    updateEnemies(dt);
+    updateBullets(dt);
+    animateHumanoids(dt);
+    drawMinimap();
+  }
+  renderer.render(scene, camera);
+}
+
+// ─── Resize ──────────────────────────────────────────────────────────────────
+window.addEventListener('resize', () => {
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+});
+
+showScreen('start-screen');
+requestAnimationFrame(loop);
+</script>
 </body>
 </html>
-
